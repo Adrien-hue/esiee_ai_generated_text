@@ -1,0 +1,315 @@
+---
+title: "<FONT color='#0066CC'><FONT size = 4 ><DIV align= center> AP-4209 ESIEE-Paris: 2023 -2024 </DIV></FONT></FONT>"
+output:
+  html_document:
+    highlight: textmate
+    theme: readable
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+---
+
+
+<style type="text/css">
+body, td {font-size: 15px;}
+code.r{font-size: 5px;}
+pre { font-size: 12px;}
+</style>
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+start.time <- Sys.time()
+```
+
+
+
+<FONT color='#0066CC'><FONT size = 4 >
+
+::: {align="center"}
+Fouille de données avec R pour la data science et l'intelligence artificielle\
+
+Projet Final
+Classification bayésienne et Analyse Factorielle Discriminante
+:::
+
+</FONT></FONT>
+
+
+<FONT color='#0066CC'><FONT size = 4 >
+
+::: {align="center"}
+BLANCHARD Thibault - HOUEE Adrien - MOREAU Romain - SUK Nathan - VALLAT-CHAPUIS Léopold\
+-- ESIEE Paris --\
+:::
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+
+<DIV align = justify>
+
+### <FONT color='#0066CC'><FONT size = 4> 1. Préambule </FONT></FONT>
+
+  Au vu des récentes avancées des modèles de langages, il est parfois difficile de faire la distinction entre du contenu généré par un humain et du contenu généré par l'IA. 
+  Cette avancée soulève des préoccupations éthiques et pratiques, notamment en matière de fiabilité de l'information, de droits d'auteur et d'intégrité académique. 
+  Dans ce contexte, la détection de texte généré par l'IA devient cruciale pour maintenir la transparence et la confiance dans le contenu numérique.
+
+  Nous allons donc développer un modèle qui puisse apporter une réponse à cette problématique.
+  La classification bayésienne offre un cadre probabiliste pour la prise de décision sous incertitude, permettant d'évaluer la probabilité qu'un texte donné soit généré par l'IA. 
+  L'AFD complète cette approche en réduisant la dimensionnalité des données tout en maximisant la séparabilité entre les classes, améliorant ainsi la performance et l'efficacité du modèle de classification. 
+  Ensemble, ces méthodes visent à fournir une solution fiable et scientifiquement fondée à la problématique de détection de texte généré par l'IA.
+<br>
+
+<hr style="border: 1px  solid gray">
+
+### <FONT color='#0066CC'><FONT size = 4> 2. Chargement et exploration des données </FONT></FONT>
+
+Commençons par importer nos jeu de données, 
+nous allons entrainer et tester notre modèle grâce aux fichiers suivants :
+
+- train_drcat_01.csv
+
+- train_drcat_02.csv
+
+- train_drcat_03.csv
+
+- train_drcat_04.csv
+
+<br>
+
+```{r, echo=F}
+# install.packages("readr") #nolint
+# install.packages("dplyr") #nolint
+# install.packages("tidyr") #nolint
+# install.packages("kableExtra") #nolint
+# install.packages("tm")#nolint 
+# install.packages("tokenizers") #nolint
+# install.packages("e1071") #nolint
+# install.packages("caret") #nolint
+# install.packages("kernlab") #nolint
+# install.packages("naivebayes") #nolint
+# install.packages("quanteda") #nolint
+```
+
+```{r, echo=F, warning=F}
+library("readr")
+library("dplyr")
+library("tidyr")
+library("kableExtra")
+library("tm")
+library("tokenizers")
+library("e1071")
+library("stringr")
+library("caret")
+library("kernlab")
+library("naivebayes")
+library("quanteda")
+library("kgrams")
+```
+ <br>
+
+Observons le début de nos jeux de données
+
+
+```{r, echo=F}
+data_1 <- read.csv("Data/train_drcat_01.csv")
+data_2 <- read.csv("Data/train_drcat_02.csv")
+data_3 <- read.csv("Data/train_drcat_03.csv")
+data_4 <- read.csv("Data/train_drcat_04.csv")
+
+data_1 %>%
+  head(10) %>%
+  kbl(digits = 3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px") # nolint
+
+data_2 %>%
+  head(10) %>%
+  kbl(digits = 3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px") # nolint
+
+data_3 %>%
+  head(10) %>%
+  kbl(digits = 3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px") # nolint
+
+data_4 %>%
+  head(10) %>%
+  kbl(digits = 3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px") # nolint
+```
+ <br>
+
+Ces 4 fichiers sont très similaires dans leur structures, seul les variables essay_id et prompt sont manquantes dans le premier dataset.
+Néanmoins la variable essay_id étant totalement aléatoire nous ne l'utiliserons dans l'entrainement de nos modèles.
+Nous allons donc effectuer les opérations suivantes sur les 4 dataframes : 
+
+- Ajout de la variable prompt ("" pour chaque observation) 
+
+- Suppression des variables essay_id pour les dataframes 2,3,4
+
+- Modification des colonnes de chaque dataframe (text, prompt, source, label, fold)
+
+Le but étant de les regrouper en un seul dataframe, nous permettant d'avoir une quantité maximale de données pour le modèle.
+
+Voilà le dataframe, analysons le
+
+```{r, echo=F}
+if (file.exists("Data/data.Rda")) {
+  load("Data/data.Rda")
+} else {
+  # Ajout de la colonne prompt manquante
+  data_1$prompt <- ""
+
+  # Suppression des variables essay_id
+  data_2 <- subset(data_2, select = -essay_id)
+  data_3 <- subset(data_3, select = -essay_id)
+  data_4 <- subset(data_4, select = -essay_id)
+
+  # Variable pour remettre les colonnes dans un ordre plus cohérent
+  colonnes <- c("text", "prompt", "source", "label", "fold")
+  data_1 <- data_1[colonnes]
+  data_2 <- data_2[colonnes]
+  data_3 <- data_3[colonnes]
+  data_4 <- data_4[colonnes]
+
+  df <- rbind(data_1, data_2, data_3, data_4)
+
+  df$prompt <- as.factor(df$prompt)
+  df$source <- as.factor(df$source)
+  df$label <- as.factor(df$label)
+  df$fold <- as.factor(df$fold)
+
+  save(df, file = "Data/data.Rda")
+}
+
+df <- df[1:500, ]
+
+df %>%
+  head(10) %>%
+  kbl(digits = 3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px") # nolint
+```
+
+ <br>
+
+
+Il est composé de 5 variables : 
+  
+ - text : Variable explicative, ce sont à partir de ces textes que le modèle devra prédire s'ils sont générés par IA ou non
+   
+ - prompt : Le prompt qui a été donné à l'IA pour générer le texte 
+
+ - source : la source d'où vient le texte associé 
+ 
+ - label : Variable indiquant si le texte a été généré par une IA ou non(`0` -> Étudiant, `1` -> IA)
+ 
+ - fold : variable correspondant au fold dans lequel l'observation sera utilisée pour de la validation croisée
+
+```{r, echo=F}
+dim(df)
+```
+
+ <br>
+
+Nous obtenons un dataframe avec 159456 observations.
+
+<hr style="border: 1px  solid gray">
+
+### <FONT color='#0066CC'><FONT size = 4> 3. Extraction de caractéristiques </FONT></FONT>
+
+Nous pouvons regarder la **distribution des n-grammes**.
+La distribution de n-grammes est une manière de visualiser ou de décrire la fréquence à laquelle chaque n-gramme apparaît dans un corpus de texte.
+Les n-grammes sont souvent utilisés pour analyser la **structure** et la **fréquence** des mots dans un texte.
+
+```{r, echo = F}
+# Créer un corpus
+corpus <- corpus(df$text)
+
+.preprocess <- function(x) {
+  # Remove speaker name and locations (boldfaced in original html)
+  x <- gsub("<b>[A-z]+</b>", "", x)
+  # Remove other html tags
+  x <- gsub("<[^>]+>||<[^>]+$||^[^>]+>$", "", x)
+  # Apply standard preprocessing including lower-case
+  x <- kgrams::preprocess(x)
+  # Collapse to a single string to avoid splitting into more sentences at the end of lines
+  x <- paste(x, collapse = " ")
+  return(x)
+}
+
+.tknz_sent <- function(x) {
+  # Tokenize sentences
+  x <- kgrams::tknz_sent(x, keep_first = TRUE)
+  # Remove empty sentences
+  x <- x[x != ""]
+  return(x)
+}
+
+freqs <- kgram_freqs(
+  corpus, # Read Shakespeare's text from connection
+  N = 5, # Store k-gram counts for k <= 5
+  .preprocess = .preprocess,  # preprocess text
+  .tknz_sent = .tknz_sent, # tokenize sentences
+  verbose = FALSE
+)
+````
+
+Nombre de mots traités :
+
+```{r, echo = F}
+# Total number of words processed
+query(freqs, "")
+````
+
+Nombre de phrases traitées :
+
+```{r, echo = F}
+# Total number of sentences processed
+query(freqs, EOS())
+```
+
+Table des fréquences des k-grammes :
+```{r, echo = F}
+summary(freqs)
+```
+
+Création du modèle à partir des k-grammes :
+```{r, echo = F}
+kn <- language_model(freqs, "kn", D = 0.75)
+
+summary(kn)
+```
+
+Perplexité du corpus :
+
+```{r, echo = F}
+perplexity(corpus, model = kn)
+````
+
+
+```{r, echo = F}
+D_grid <- seq(from = 0.5, to = 0.99, by = 0.01)
+FUN <- function(D, N) {
+        param(kn, "N") <- N
+        param(kn, "D") <- D
+        perplexity(corpus, model = kn)
+}
+P_grid <- lapply(2:5, function(N) sapply(D_grid, FUN, N = N))
+oldpar <- par(mar = c(2, 2, 1, 1))
+plot(D_grid, P_grid[[1]], type = "n", xlab = "D", ylab = "Perplexity")
+lines(D_grid, P_grid[[1]], col = "red")
+lines(D_grid, P_grid[[2]], col = "chartreuse")
+lines(D_grid, P_grid[[3]], col = "blue")
+lines(D_grid, P_grid[[4]], col = "black")
+```
+
+Temps d'exécution :
+
+```{r, echo = F}
+end.time <- Sys.time()
+time.taken <- round(end.time - start.time,2)
+time.taken
+```
